@@ -351,6 +351,12 @@ The server exposes 3 resources:
 > **"Failed to read private key"**
 > Use an absolute path (e.g. `/Users/yourname/...`), not `~/...`.
 
+> **"LIFETIME_BUDGET_NOT_SUPPORTED"**
+> This organization does not accept a campaign lifetime budget (`budgetAmount`). That is common on pay-as-you-go accounts. Call `create_campaign` with only `dailyBudgetAmount` — omit `budgetAmount`, or pass `""`, `"0"`, or `"none"`, so the field is not sent.
+
+> **Ad group end time rejected**
+> `create_ad_group` and `update_ad_group` take `endTime` as `YYYY-MM-DD` and send it as a full date-time (`YYYY-MM-DDT00:00:00.000`), which is what the Apple Search Ads API expects. Search Match is the optional boolean `automatedKeywordsOptIn` on create and update.
+
 > **Server disconnects immediately**
 > A required credential is missing. You need all four: `ASA_CLIENT_ID`, `ASA_TEAM_ID`, `ASA_KEY_ID`, and `ASA_PRIVATE_KEY_PATH`.
 

@@ -14,7 +14,7 @@ export function registerAdGroupTools(server: McpServer, client: AppleAdsClient) 
     "list_ad_groups",
     {
       title: "List / Find Ad Groups",
-      description: "List or search ad groups. Provide campaignId to scope to one campaign, or omit to search across all campaigns (org-level). Supports filtering by conditions (e.g., status, defaultBidAmount) and sorting. Returns ad group ID, name, status, default bid, and CPA goal.",
+      description: "List or search ad groups. Provide campaignId to scope to one campaign, or omit to search across all campaigns (org-level). Supports filtering by conditions (e.g., status, defaultBidAmount) and sorting. Returns ad group ID, name, status, default bid, CPA goal, and Search Match (automatedKeywordsOptIn).",
       inputSchema: {
         campaignId: z.number().optional().describe("Campaign ID (omit to search across all campaigns)"),
         limit: z.number().optional().describe("Max results (default 50)"),
@@ -53,6 +53,7 @@ export function registerAdGroupTools(server: McpServer, client: AppleAdsClient) 
             `Status: ${ag.displayStatus}`,
             `Default Bid: ${formatMoney(ag.defaultBidAmount)}`,
             ag.cpaGoal ? `CPA Goal: ${formatMoney(ag.cpaGoal)}` : null,
+            `Search Match: ${ag.automatedKeywordsOptIn ? "on" : "off"}`,
           ]
             .filter(Boolean)
             .join("\n")
@@ -83,20 +84,21 @@ export function registerAdGroupTools(server: McpServer, client: AppleAdsClient) 
       title: "Create Ad Group",
       description: `Create a new ad group within a campaign. After creation, add targeting keywords (add_targeting_keywords) to start matching search queries. Optionally create ads with custom creatives (create_ad).
 
-Defaults: status=ENABLED, pricingModel=CPC, startTime=today. The defaultBidAmount is used for keywords that don't have an individual bid. Set cpaGoal to enable Apple's cost-per-acquisition optimization.`,
+Defaults: status=ENABLED, pricingModel=CPC, startTime=today, Search Match off. The defaultBidAmount is used for keywords that don't have an individual bid. Set cpaGoal to enable Apple's cost-per-acquisition optimization. Set automatedKeywordsOptIn to turn Search Match on. startTime and endTime are sent as full date-times (YYYY-MM-DDT00:00:00.000).`,
       inputSchema: {
         campaignId: z.number().describe("The campaign ID"),
         name: z.string().describe("Ad group name"),
         defaultBidAmount: z.string().describe("Default CPC bid (e.g., '1.00'). Used for keywords without individual bids"),
         currency: z.string().optional().describe("Currency code (default 'USD')"),
         cpaGoal: z.string().optional().describe("CPA goal — enables Apple's CPA optimization algorithm"),
-        startTime: z.string().optional().describe("Start time (YYYY-MM-DD, default today)"),
-        endTime: z.string().optional().describe("End time (YYYY-MM-DD)"),
+        startTime: z.string().optional().describe("Start time (YYYY-MM-DD, default today). Sent as YYYY-MM-DDT00:00:00.000"),
+        endTime: z.string().optional().describe("End time (YYYY-MM-DD). Sent as YYYY-MM-DDT00:00:00.000"),
         status: z.enum(["ENABLED", "PAUSED"]).optional().describe("Initial status (default 'ENABLED')"),
+        automatedKeywordsOptIn: z.boolean().optional().describe("Search Match on/off (automatedKeywordsOptIn). Omit to leave Apple's default (false)"),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ campaignId, name, defaultBidAmount, currency, cpaGoal, startTime, endTime, status }) => {
+    async ({ campaignId, name, defaultBidAmount, currency, cpaGoal, startTime, endTime, status, automatedKeywordsOptIn }) => {
       try {
         if (startTime) validateDate(startTime, "startTime");
         if (endTime) validateDate(endTime, "endTime");
@@ -111,6 +113,7 @@ Defaults: status=ENABLED, pricingModel=CPC, startTime=today. The defaultBidAmoun
         };
         if (cpaGoal) body.cpaGoal = { amount: cpaGoal, currency: cur };
         if (endTime) body.endTime = toISO8601(endTime);
+        if (automatedKeywordsOptIn !== undefined) body.automatedKeywordsOptIn = automatedKeywordsOptIn;
 
         const resp = await client.post<ApiResponse<AdGroup>>(`/campaigns/${campaignId}/adgroups`, body);
         return {
@@ -129,7 +132,7 @@ Defaults: status=ENABLED, pricingModel=CPC, startTime=today. The defaultBidAmoun
     "update_ad_group",
     {
       title: "Update Ad Group",
-      description: "Update an ad group's configuration. Only provided fields are changed. Changing defaultBidAmount affects all keywords that don't have individual bids. Setting status to PAUSED stops delivery for this ad group only.",
+      description: "Update an ad group's configuration. Only provided fields are changed. Changing defaultBidAmount affects all keywords that don't have individual bids. Setting status to PAUSED stops delivery for this ad group only. Set automatedKeywordsOptIn to turn Search Match on or off. endTime is sent as a full date-time (YYYY-MM-DDT00:00:00.000).",
       inputSchema: {
         campaignId: z.number().describe("The campaign ID"),
         adGroupId: z.number().describe("The ad group ID"),
@@ -138,11 +141,12 @@ Defaults: status=ENABLED, pricingModel=CPC, startTime=today. The defaultBidAmoun
         defaultBidAmount: z.string().optional().describe("New default bid — affects keywords without individual bids"),
         cpaGoal: z.string().optional().describe("New CPA goal"),
         currency: z.string().optional().describe("Currency code (default 'USD')"),
-        endTime: z.string().optional().describe("New end time (YYYY-MM-DD)"),
+        endTime: z.string().optional().describe("New end time (YYYY-MM-DD). Sent as YYYY-MM-DDT00:00:00.000"),
+        automatedKeywordsOptIn: z.boolean().optional().describe("Search Match on/off (automatedKeywordsOptIn)"),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ campaignId, adGroupId, name, status, defaultBidAmount, cpaGoal, currency, endTime }) => {
+    async ({ campaignId, adGroupId, name, status, defaultBidAmount, cpaGoal, currency, endTime, automatedKeywordsOptIn }) => {
       try {
         if (endTime) validateDate(endTime, "endTime");
 
@@ -152,7 +156,8 @@ Defaults: status=ENABLED, pricingModel=CPC, startTime=today. The defaultBidAmoun
         if (status) body.status = status;
         if (defaultBidAmount) body.defaultBidAmount = { amount: defaultBidAmount, currency: cur };
         if (cpaGoal) body.cpaGoal = { amount: cpaGoal, currency: cur };
-        if (endTime) body.endTime = endTime;
+        if (endTime) body.endTime = toISO8601(endTime);
+        if (automatedKeywordsOptIn !== undefined) body.automatedKeywordsOptIn = automatedKeywordsOptIn;
 
         if (Object.keys(body).length === 0) {
           return { content: [{ type: "text", text: "No changes specified." }] };
@@ -198,7 +203,7 @@ Defaults: status=ENABLED, pricingModel=CPC, startTime=today. The defaultBidAmoun
     "get_ad_group",
     {
       title: "Get Ad Group Details",
-      description: "Get full configuration of a specific ad group: bid settings, CPA goal, status, and scheduling. Use get_adgroup_report for performance metrics.",
+      description: "Get full configuration of a specific ad group: bid settings, CPA goal, Search Match (automatedKeywordsOptIn), status, and scheduling. Use get_adgroup_report for performance metrics.",
       inputSchema: {
         campaignId: z.number().describe("The campaign ID"),
         adGroupId: z.number().describe("The ad group ID"),
@@ -214,6 +219,7 @@ Defaults: status=ENABLED, pricingModel=CPC, startTime=today. The defaultBidAmoun
           `Status: ${ag.displayStatus}`,
           `Default Bid: ${formatMoney(ag.defaultBidAmount)}`,
           ag.cpaGoal ? `CPA Goal: ${formatMoney(ag.cpaGoal)}` : null,
+          `Search Match: ${ag.automatedKeywordsOptIn ? "on" : "off"}`,
         ].filter(Boolean).join("\n");
 
         return {

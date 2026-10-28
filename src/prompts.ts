@@ -114,10 +114,10 @@ Follow these steps in order:
    - adamId: ${adamId}
    - countriesOrRegions: [${countries.split(",").map(c => `"${c.trim()}"`).join(", ")}]
    - dailyBudgetAmount: "${dailyBudget}"
-   ${totalBudget ? `- budgetAmount: "${totalBudget}"` : "- budgetAmount: calculate a reasonable lifetime budget (e.g., dailyBudget * 90)"}
+   ${totalBudget ? `- budgetAmount: "${totalBudget}" (only if this org supports a lifetime budget)` : "- Omit budgetAmount. Pay-as-you-go and many other orgs reject a lifetime budget with LIFETIME_BUDGET_NOT_SUPPORTED; dailyBudgetAmount alone is enough."}
    - status: PAUSED (we'll enable after setup is complete)
 
-4. **Create an ad group**: Use create_ad_group with a reasonable default bid based on the app category (typically $0.50-$2.00 for most categories).
+4. **Create an ad group**: Use create_ad_group with a reasonable default bid based on the app category (typically $0.50-$2.00 for most categories). Pass automatedKeywordsOptIn: true only when Search Match should be on.
 
 5. **Suggest keywords**: Based on the app name and category, suggest 10-20 initial keywords:
    - 5-10 brand/exact terms (app name, developer name)

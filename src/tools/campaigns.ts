@@ -95,11 +95,13 @@ export function registerCampaignTools(server: McpServer, client: AppleAdsClient)
 
 Defaults applied: status=ENABLED, currency=USD, supplySource=APPSTORE_SEARCH_RESULTS. adChannelType and billingEvent are auto-set based on supply source (SEARCH/TAPS for search results, DISPLAY/IMPRESSIONS for search tab).
 
+Lifetime budget (budgetAmount) is optional. Omit it — or pass "", "0", or "none" — to create with only dailyBudgetAmount. Many organizations, including pay-as-you-go, reject a lifetime budget with error LIFETIME_BUDGET_NOT_SUPPORTED.
+
 Side effects: Campaign starts spending immediately if status=ENABLED and budget > 0. Use status=PAUSED to set up everything before going live.`,
       inputSchema: {
         name: z.string().describe("Campaign name"),
         adamId: z.number().describe("App Adam ID (use search_apps to find it)"),
-        budgetAmount: z.string().describe("Total/lifetime budget amount (e.g., '5000.00')"),
+        budgetAmount: z.string().optional().describe("Total/lifetime budget (e.g., '5000.00'). Omit, or pass '', '0', or 'none', to send only the daily budget. Required only for orgs that support a lifetime budget; otherwise Apple returns LIFETIME_BUDGET_NOT_SUPPORTED."),
         dailyBudgetAmount: z.string().describe("Daily budget cap (e.g., '100.00')"),
         countriesOrRegions: z.array(z.string()).describe("Country/region codes (e.g., ['US', 'GB']). Use the apple-ads://countries resource for valid codes"),
         currency: z.string().optional().describe("Currency code (default 'USD')"),
@@ -112,10 +114,10 @@ Side effects: Campaign starts spending immediately if status=ENABLED and budget 
       try {
         const cur = currency ?? "USD";
         const resolvedSources = supplySources ?? ["APPSTORE_SEARCH_RESULTS"];
+        const lifetimeBudget = resolveLifetimeBudget(budgetAmount);
         const body: CampaignCreate = {
           name,
           adamId,
-          budgetAmount: { amount: budgetAmount, currency: cur },
           dailyBudgetAmount: { amount: dailyBudgetAmount, currency: cur },
           countriesOrRegions,
           supplySources: resolvedSources,
@@ -123,6 +125,9 @@ Side effects: Campaign starts spending immediately if status=ENABLED and budget 
           status: status ?? "ENABLED",
           billingEvent: resolvedSources.includes("APPSTORE_SEARCH_TAB") ? "IMPRESSIONS" : "TAPS",
         };
+        if (lifetimeBudget) {
+          body.budgetAmount = { amount: lifetimeBudget, currency: cur };
+        }
 
         const resp = await client.post<ApiResponse<Campaign>>("/campaigns", body);
         return {
@@ -148,7 +153,7 @@ Important: changing countriesOrRegions will clear existing geo targeting (ad-gro
         campaignId: z.number().describe("The campaign ID"),
         name: z.string().optional().describe("New campaign name"),
         status: z.enum(["ENABLED", "PAUSED"]).optional().describe("New status — PAUSED stops all delivery immediately"),
-        budgetAmount: z.string().optional().describe("New total/lifetime budget (cannot be added after creation if not set initially)"),
+        budgetAmount: z.string().optional().describe("New total/lifetime budget (cannot be added after creation if not set initially). '', '0', and 'none' are ignored and not sent."),
         dailyBudgetAmount: z.string().optional().describe("New daily budget cap (e.g., '1.50')"),
         countriesOrRegions: z.array(z.string()).optional().describe("New country/region codes — WARNING: clears geo targeting"),
         currency: z.string().optional().describe("Currency code (default 'USD')"),
@@ -161,7 +166,8 @@ Important: changing countriesOrRegions will clear existing geo targeting (ad-gro
         const body: CampaignUpdate = {};
         if (name) body.name = name;
         if (status) body.status = status;
-        if (budgetAmount) body.budgetAmount = { amount: budgetAmount, currency: cur };
+        const lifetimeBudget = resolveLifetimeBudget(budgetAmount);
+        if (lifetimeBudget) body.budgetAmount = { amount: lifetimeBudget, currency: cur };
         if (dailyBudgetAmount) body.dailyBudgetAmount = { amount: dailyBudgetAmount, currency: cur };
         if (countriesOrRegions) body.countriesOrRegions = countriesOrRegions;
 
@@ -276,4 +282,20 @@ Important: changing countriesOrRegions will clear existing geo targeting (ad-gro
       }
     }
   );
+}
+
+/**
+ * Amount to send as budgetAmount, or undefined when the field must be omitted.
+ * Apple returns LIFETIME_BUDGET_NOT_SUPPORTED if a lifetime budget is present on
+ * orgs that only allow a daily budget (common for pay-as-you-go). Blank, "none",
+ * and numeric zero ("0", "0.00") mean "daily budget only".
+ */
+function resolveLifetimeBudget(budgetAmount: string | undefined): string | undefined {
+  if (budgetAmount == null) return undefined;
+  const trimmed = budgetAmount.trim();
+  if (trimmed.length === 0) return undefined;
+  if (trimmed.toLowerCase() === "none") return undefined;
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric) && numeric === 0) return undefined;
+  return trimmed;
 }

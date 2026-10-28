@@ -208,7 +208,8 @@ export interface CampaignCreate {
   name: string;
   adamId: number;
   countriesOrRegions: string[];
-  budgetAmount: Money;
+  /** Omit for orgs that reject a lifetime budget (LIFETIME_BUDGET_NOT_SUPPORTED). */
+  budgetAmount?: Money;
   dailyBudgetAmount: Money;
   supplySources?: string[];
   adChannelType?: string;
